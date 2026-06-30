@@ -1,0 +1,19 @@
+{
+  "name": "Cofre — Gestão Financeira",
+  "short_name": "Cofre",
+  "description": "Gestão financeira pessoal e de negócios. Saldo, dívidas, vendas, stock, bens e estatísticas. Funciona offline.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b1220",
+  "theme_color": "#0f766e",
+  "lang": "pt",
+  "categories": ["finance", "productivity", "business"],
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

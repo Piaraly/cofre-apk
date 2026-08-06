@@ -1,7 +1,0 @@
-COFRE — AJUSTES DE SESSÃO E PRIVACIDADE
-
-- O Cofre abre os dados locais mesmo sem internet quando já existe uma sessão guardada.
-- Ao voltar a ter internet, a conta é ligada novamente e as alterações pendentes são sincronizadas.
-- A sessão permanece iniciada até o utilizador escolher Terminar sessão.
-- A página de privacidade e a tela de login foram simplificadas.
-- A PWA continua preparada para publicação no Firebase Hosting.

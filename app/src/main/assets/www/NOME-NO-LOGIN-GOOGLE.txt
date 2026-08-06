@@ -1,0 +1,13 @@
+COFRE — NOME MOSTRADO NO LOGIN GOOGLE
+
+Para mostrar o nome Cofre e o logótipo no consentimento Google:
+1. Abra a Google Cloud Console com o projecto cofredb-ef5d2 seleccionado.
+2. Entre em Google Auth Platform > Branding.
+3. Defina App name como Cofre.
+4. Escolha o email de apoio.
+5. Adicione o logótipo do Cofre.
+6. Página inicial: https://piaraly.github.io/cofre/
+7. Política de privacidade: https://piaraly.github.io/cofre/privacy.html
+8. Guarde, faça a verificação de marca quando solicitada e publique a marca.
+
+O texto cofredb-ef5d2.firebaseapp.com é o domínio técnico usado pelo Firebase Authentication. A marca pode passar a mostrar Cofre, mas para trocar também o domínio técnico é necessário usar um domínio próprio configurado no Firebase Hosting como authDomain, ou implementar proxy/autoalojamento dos auxiliares de autenticação. GitHub Pages não fornece reverse proxy.

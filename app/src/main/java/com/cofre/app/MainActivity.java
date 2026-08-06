@@ -1,10 +1,14 @@
 package com.cofre.app;
 
+import static com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL;
+
 import android.app.Activity;
 import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.CancellationSignal;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
@@ -17,32 +21,61 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
+import androidx.credentials.ClearCredentialStateRequest;
+import androidx.credentials.Credential;
+import androidx.credentials.CredentialManager;
+import androidx.credentials.CredentialManagerCallback;
+import androidx.credentials.CustomCredential;
+import androidx.credentials.GetCredentialRequest;
+import androidx.credentials.GetCredentialResponse;
+import androidx.credentials.exceptions.ClearCredentialException;
+import androidx.credentials.exceptions.GetCredentialCancellationException;
+import androidx.credentials.exceptions.GetCredentialException;
+import androidx.credentials.exceptions.GetCredentialInterruptedException;
+import androidx.credentials.exceptions.GetCredentialProviderConfigurationException;
+import androidx.credentials.exceptions.NoCredentialException;
 import androidx.webkit.WebViewAssetLoader;
 
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption;
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
+
+import org.json.JSONObject;
+
 import java.io.OutputStream;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
- * Cofre — invólucro Android com funcionamento local e sincronização Firebase.
- * Carrega a app web dos assets locais e dá suporte nativo a:
- *  - escolher ficheiro (importar backup)  -> onShowFileChooser
- *  - guardar ficheiro (exportar backup)   -> AndroidCofre.saveBackup + ACTION_CREATE_DOCUMENT
+ * Cofre — invólucro Android com funcionamento local, sincronização Firebase
+ * e login Google nativo através do Credential Manager.
  */
 public class MainActivity extends Activity {
+
+    private static final String TAG = "CofreAndroid";
+    private static final int REQ_PICK = 1001;
+    private static final int REQ_SAVE = 1002;
 
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
     private String pendingBackup;
-    private static final int REQ_PICK = 1001;
-    private static final int REQ_SAVE = 1002;
+
+    private CredentialManager credentialManager;
+    private final ExecutorService credentialExecutor = Executors.newSingleThreadExecutor();
+    private volatile boolean googleSignInInProgress = false;
+    private String pendingGoogleMode = "login";
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        credentialManager = CredentialManager.create(this);
+
         web = new WebView(this);
         web.setLayoutParams(new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(web);
 
         final WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
@@ -53,6 +86,20 @@ public class MainActivity extends Activity {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 return assetLoader.shouldInterceptRequest(request.getUrl());
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                Uri uri = request.getUrl();
+                if ("appassets.androidplatform.net".equalsIgnoreCase(uri.getHost())) {
+                    return false;
+                }
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, uri));
+                } catch (Exception ignored) {
+                    Toast.makeText(MainActivity.this, "Não foi possível abrir o endereço", Toast.LENGTH_SHORT).show();
+                }
+                return true;
             }
         });
 
@@ -67,50 +114,172 @@ public class MainActivity extends Activity {
                     startActivityForResult(Intent.createChooser(intent, "Escolher backup"), REQ_PICK);
                 } catch (Exception e) {
                     fileCallback = null;
-                    Toast.makeText(MainActivity.this, "Nao foi possivel abrir os ficheiros", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(MainActivity.this, "Não foi possível abrir os ficheiros", Toast.LENGTH_SHORT).show();
                     return false;
                 }
                 return true;
             }
         });
 
-        web.addJavascriptInterface(new Object() {
-            @JavascriptInterface
-            public void saveBackup(final String filename, final String content) {
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        pendingBackup = content;
-                        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-                        intent.addCategory(Intent.CATEGORY_OPENABLE);
-                        intent.setType("application/json");
-                        intent.putExtra(Intent.EXTRA_TITLE, filename);
-                        try {
-                            startActivityForResult(intent, REQ_SAVE);
-                        } catch (Exception e) {
-                            Toast.makeText(MainActivity.this, "Nao foi possivel guardar", Toast.LENGTH_SHORT).show();
-                        }
-                    }
-                });
-            }
-        }, "AndroidCofre");
+        web.addJavascriptInterface(new AndroidBridge(), "AndroidCofre");
 
-        WebSettings s = web.getSettings();
-        s.setJavaScriptEnabled(true);
-        s.setDomStorageEnabled(true);
-        s.setDatabaseEnabled(true);
-        s.setCacheMode(WebSettings.LOAD_DEFAULT);
-        s.setAllowFileAccess(false);
-        s.setAllowContentAccess(true);
-        s.setLoadWithOverviewMode(true);
-        s.setUseWideViewPort(true);
-        s.setSupportZoom(false);
+        WebSettings settings = web.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        settings.setAllowFileAccess(false);
+        settings.setAllowContentAccess(true);
+        settings.setLoadWithOverviewMode(true);
+        settings.setUseWideViewPort(true);
+        settings.setSupportZoom(false);
 
         if (savedInstanceState == null) {
             web.loadUrl("https://appassets.androidplatform.net/assets/www/index.html");
         } else {
             web.restoreState(savedInstanceState);
         }
+    }
+
+    private final class AndroidBridge {
+        @JavascriptInterface
+        public void saveBackup(final String filename, final String content) {
+            runOnUiThread(() -> {
+                pendingBackup = content;
+                Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("application/json");
+                intent.putExtra(Intent.EXTRA_TITLE, filename);
+                try {
+                    startActivityForResult(intent, REQ_SAVE);
+                } catch (Exception e) {
+                    Toast.makeText(MainActivity.this, "Não foi possível guardar", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void signInWithGoogle(final String mode) {
+            runOnUiThread(() -> startNativeGoogleSignIn(mode));
+        }
+
+        @JavascriptInterface
+        public void clearGoogleCredentialState() {
+            clearNativeCredentialState();
+        }
+    }
+
+    private void startNativeGoogleSignIn(String mode) {
+        if (googleSignInInProgress) {
+            notifyWebGoogleError("Já existe um login Google em andamento.");
+            return;
+        }
+        googleSignInInProgress = true;
+        pendingGoogleMode = "link".equals(mode) ? "link" : "login";
+
+        final GetGoogleIdOption googleIdOption;
+        try {
+            googleIdOption = new GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(false)
+                    .setServerClientId(getString(R.string.default_web_client_id))
+                    .build();
+        } catch (Exception e) {
+            googleSignInInProgress = false;
+            Log.e(TAG, "Configuração Google inválida", e);
+            notifyWebGoogleError("O login Google não está configurado correctamente neste APK.");
+            return;
+        }
+
+        GetCredentialRequest request = new GetCredentialRequest.Builder()
+                .addCredentialOption(googleIdOption)
+                .build();
+
+        credentialManager.getCredentialAsync(
+                this,
+                request,
+                new CancellationSignal(),
+                credentialExecutor,
+                new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
+                    @Override
+                    public void onResult(GetCredentialResponse result) {
+                        handleGoogleCredential(result.getCredential());
+                    }
+
+                    @Override
+                    public void onError(@NonNull GetCredentialException error) {
+                        googleSignInInProgress = false;
+                        Log.w(TAG, "Falha no Credential Manager", error);
+                        notifyWebGoogleError(credentialErrorMessage(error));
+                    }
+                }
+        );
+    }
+
+    private void handleGoogleCredential(Credential credential) {
+        try {
+            if (!(credential instanceof CustomCredential)
+                    || !TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(credential.getType())) {
+                throw new IllegalStateException("Tipo de credencial Google inesperado");
+            }
+            CustomCredential customCredential = (CustomCredential) credential;
+            GoogleIdTokenCredential googleCredential =
+                    GoogleIdTokenCredential.createFrom(customCredential.getData());
+            String idToken = googleCredential.getIdToken();
+            googleSignInInProgress = false;
+            notifyWebGoogleSuccess(idToken, pendingGoogleMode);
+        } catch (Exception e) {
+            googleSignInInProgress = false;
+            Log.e(TAG, "Não foi possível ler o token Google", e);
+            notifyWebGoogleError("O Google devolveu uma credencial inválida. Actualize o APK e tente novamente.");
+        }
+    }
+
+    private String credentialErrorMessage(GetCredentialException error) {
+        if (error instanceof GetCredentialCancellationException
+                || error instanceof GetCredentialInterruptedException) {
+            return "O login Google foi cancelado.";
+        }
+        if (error instanceof NoCredentialException) {
+            return "Não foi encontrada uma conta Google disponível neste dispositivo.";
+        }
+        if (error instanceof GetCredentialProviderConfigurationException) {
+            return "O login Google não está configurado correctamente neste APK.";
+        }
+        String message = error.getLocalizedMessage();
+        return message == null || message.trim().isEmpty()
+                ? "Não foi possível concluir o login Google."
+                : "Não foi possível concluir o login Google: " + message;
+    }
+
+    private void notifyWebGoogleSuccess(String idToken, String mode) {
+        final String script = "window.CofreNativeGoogleAuth&&window.CofreNativeGoogleAuth.complete("
+                + JSONObject.quote(idToken) + "," + JSONObject.quote(mode) + ");";
+        runOnUiThread(() -> web.evaluateJavascript(script, null));
+    }
+
+    private void notifyWebGoogleError(String message) {
+        final String script = "window.CofreNativeGoogleAuth&&window.CofreNativeGoogleAuth.fail("
+                + JSONObject.quote(message) + ");";
+        runOnUiThread(() -> web.evaluateJavascript(script, null));
+    }
+
+    private void clearNativeCredentialState() {
+        credentialManager.clearCredentialStateAsync(
+                new ClearCredentialStateRequest(),
+                new CancellationSignal(),
+                credentialExecutor,
+                new CredentialManagerCallback<Void, ClearCredentialException>() {
+                    @Override
+                    public void onResult(Void result) {
+                        Log.d(TAG, "Estado do Credential Manager limpo");
+                    }
+
+                    @Override
+                    public void onError(@NonNull ClearCredentialException error) {
+                        Log.w(TAG, "Não foi possível limpar o Credential Manager", error);
+                    }
+                }
+        );
     }
 
     @Override
@@ -120,11 +289,13 @@ public class MainActivity extends Activity {
             Uri[] results = null;
             if (resultCode == RESULT_OK && data != null) {
                 if (data.getDataString() != null) {
-                    results = new Uri[]{ Uri.parse(data.getDataString()) };
+                    results = new Uri[]{Uri.parse(data.getDataString())};
                 } else if (data.getClipData() != null) {
-                    int n = data.getClipData().getItemCount();
-                    results = new Uri[n];
-                    for (int i = 0; i < n; i++) results[i] = data.getClipData().getItemAt(i).getUri();
+                    int count = data.getClipData().getItemCount();
+                    results = new Uri[count];
+                    for (int i = 0; i < count; i++) {
+                        results[i] = data.getClipData().getItemAt(i).getUri();
+                    }
                 }
             }
             if (fileCallback != null) {
@@ -133,10 +304,9 @@ public class MainActivity extends Activity {
             }
         } else if (requestCode == REQ_SAVE) {
             if (resultCode == RESULT_OK && data != null && data.getData() != null && pendingBackup != null) {
-                try {
-                    OutputStream os = getContentResolver().openOutputStream(data.getData());
-                    os.write(pendingBackup.getBytes("UTF-8"));
-                    os.close();
+                try (OutputStream output = getContentResolver().openOutputStream(data.getData())) {
+                    if (output == null) throw new IllegalStateException("Destino indisponível");
+                    output.write(pendingBackup.getBytes("UTF-8"));
                     Toast.makeText(this, "Backup guardado com sucesso", Toast.LENGTH_LONG).show();
                 } catch (Exception e) {
                     Toast.makeText(this, "Erro ao guardar: " + e.getMessage(), Toast.LENGTH_LONG).show();
@@ -150,6 +320,16 @@ public class MainActivity extends Activity {
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
         web.saveState(outState);
+    }
+
+    @Override
+    protected void onDestroy() {
+        credentialExecutor.shutdownNow();
+        if (web != null) {
+            web.removeJavascriptInterface("AndroidCofre");
+            web.destroy();
+        }
+        super.onDestroy();
     }
 
     @Override

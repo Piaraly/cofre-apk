@@ -3235,7 +3235,7 @@ async function startCofreCloud(){
     }
     const {appSdk,authSdk,storeSdk}=await loadFirebaseSdk();
     const {initializeApp}=appSdk;
-    const {getAuth,setPersistence,browserLocalPersistence,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,sendPasswordResetEmail,GoogleAuthProvider,signInWithPopup,signInWithRedirect,getRedirectResult,signOut:firebaseSignOut,updateProfile,sendEmailVerification,linkWithPopup,linkWithRedirect,EmailAuthProvider,linkWithCredential}=authSdk;
+    const {getAuth,setPersistence,browserLocalPersistence,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,sendPasswordResetEmail,GoogleAuthProvider,signInWithPopup,signInWithRedirect,getRedirectResult,signInWithCredential,signOut:firebaseSignOut,updateProfile,sendEmailVerification,linkWithPopup,linkWithRedirect,EmailAuthProvider,linkWithCredential}=authSdk;
     const {getFirestore,doc,getDoc,setDoc,onSnapshot,serverTimestamp}=storeSdk;
 
 const FIREBASE_AUTH_HOST="cofredb-ef5d2.firebaseapp.com";
@@ -3297,7 +3297,11 @@ async function configurePersistence(){
 async function emailSubmit(){bridge.setAuthMessage();const mode=document.getElementById("authGate").dataset.mode||"login",email=document.getElementById("authEmail").value.trim(),pw=document.getElementById("authPassword").value,name=document.getElementById("authName")?.value.trim()||"";if(mode==="signup"&&pw!==document.getElementById("authConfirm").value){bridge.setAuthMessage("As palavras-passe não coincidem.");return;}bridge.setAuthMessage(mode==="signup"?"A criar a conta…":"A entrar…","status");try{await configurePersistence();if(mode==="signup"){const cred=await createUserWithEmailAndPassword(auth,email,pw);if(name)await updateProfile(cred.user,{displayName:name});try{await sendEmailVerification(cred.user);}catch(e){}}else await signInWithEmailAndPassword(auth,email,pw);}catch(err){bridge.setAuthMessage(authErrorMessage(err));}}
 async function googleLogin(){
   bridge.setAuthMessage();
-  if(androidApp){bridge.setAuthMessage("No APK actual, entre com email e palavra-passe. O login Google será acrescentado quando o projecto usar a autenticação nativa do Android.");return;}
+  if(androidApp){
+    try{bridge.setAuthMessage("A abrir as contas Google…","status");window.AndroidCofre.signInWithGoogle("login");}
+    catch(err){bridge.setAuthMessage("Não foi possível abrir o login Google no Android.");}
+    return;
+  }
   try{
     await configurePersistence();
     if(preferRedirect){
@@ -3318,11 +3322,39 @@ async function googleLogin(){
     try{await signInWithPopup(auth,provider);}finally{finished=true;clearTimeout(timer);}
   }catch(err){bridge.setAuthMessage(authErrorMessage(err));}
 }
+async function acceptNativeGoogleToken(idToken,mode="login"){
+  try{
+    await configurePersistence();
+    const credential=GoogleAuthProvider.credential(idToken);
+    if(mode==="link"){
+      if(!currentUser)throw new Error("Entre primeiro na sua conta antes de associar o Google.");
+      await linkWithCredential(currentUser,credential);
+      await currentUser.reload();currentUser=auth.currentUser;
+      status("Método Google associado","synced");
+      bridge.updateUI({user:userPublic(currentUser),providers:providersOf(currentUser)});
+      bridge.toast("Google associado à conta","ok");
+    }else{
+      bridge.setAuthMessage("A concluir o login…","status");
+      await signInWithCredential(auth,credential);
+    }
+  }catch(err){
+    const message=authErrorMessage(err);
+    if(mode==="link")bridge.toast(message,"err");else bridge.setAuthMessage(message);
+  }
+}
+function nativeGoogleFailure(message){
+  bridge.setAuthMessage(message||"Não foi possível concluir o login Google.");
+}
+window.CofreNativeGoogleAuth={complete:acceptNativeGoogleToken,fail:nativeGoogleFailure};
 async function forgotPassword(){const email=document.getElementById("authEmail").value.trim();if(!email){bridge.setAuthMessage("Escreva primeiro o seu email.");return;}try{await sendPasswordResetEmail(auth,email);bridge.setAuthMessage("Enviámos as instruções para redefinir a palavra-passe.","status");}catch(err){bridge.setAuthMessage(authErrorMessage(err));}}
-async function doSignOut(){try{clearTimeout(saveTimer);if(currentUser&&bridge.isDirty(currentUser.uid)&&navigator.onLine)await writeCloud(bridge.currentState(),{silent:true});localStorage.removeItem("cofre_last_uid");localStorage.removeItem("cofre_last_user");await firebaseSignOut(auth);}catch(err){bridge.toast(authErrorMessage(err),"err");}}
+async function doSignOut(){try{clearTimeout(saveTimer);if(currentUser&&bridge.isDirty(currentUser.uid)&&navigator.onLine)await writeCloud(bridge.currentState(),{silent:true});localStorage.removeItem("cofre_last_uid");localStorage.removeItem("cofre_last_user");await firebaseSignOut(auth);try{window.AndroidCofre?.clearGoogleCredentialState?.();}catch(e){}}catch(err){bridge.toast(authErrorMessage(err),"err");}}
 async function syncNow(){if(!currentUser){bridge.showGate();return;}await writeCloud(bridge.currentState());}
 async function linkGoogle(){
-  if(androidApp){bridge.toast("Associe o Google pela PWA hospedada no Firebase.","err");return;}
+  if(androidApp){
+    try{bridge.toast("A abrir as contas Google…","ok");window.AndroidCofre.signInWithGoogle("link");}
+    catch(err){bridge.toast("Não foi possível abrir o login Google no Android.","err");}
+    return;
+  }
   try{
     await configurePersistence();
     if(preferRedirect){
@@ -3335,7 +3367,7 @@ async function linkGoogle(){
 }
 async function addPassword(){if(!currentUser?.email){bridge.toast("Esta conta não possui email disponível","err");return;}openModal("Adicionar palavra-passe",`<p class="small muted mb">Depois poderá entrar com <b>${currentUser.email}</b> e esta palavra-passe, inclusive no APK.</p><div class="field"><label>Nova palavra-passe</label><input id="cloudNewPass" type="password" minlength="6"></div><div class="field"><label>Confirmar</label><input id="cloudNewPass2" type="password" minlength="6"></div>`,{okText:"Associar",onOk:()=>{const a=document.getElementById("cloudNewPass").value,b=document.getElementById("cloudNewPass2").value;if(a.length<6){bridge.toast("Use pelo menos 6 caracteres","err");return false;}if(a!==b){bridge.toast("As palavras-passe não coincidem","err");return false;}linkWithCredential(currentUser,EmailAuthProvider.credential(currentUser.email,a)).then(async()=>{await currentUser.reload();currentUser=auth.currentUser;bridge.updateUI({user:userPublic(currentUser),providers:providersOf(currentUser)});bridge.toast("Palavra-passe associada","ok");}).catch(err=>bridge.toast(authErrorMessage(err),"err"));return true;}});}
 async function verifyEmail(){try{await sendEmailVerification(currentUser);bridge.toast("Email de verificação enviado","ok");}catch(err){bridge.toast(authErrorMessage(err),"err");}}
-window.CofreCloud={queueSave,emailSubmit,googleLogin,forgotPassword,signOut:doSignOut,syncNow,linkGoogle,addPassword,verifyEmail};
+window.CofreCloud={queueSave,emailSubmit,googleLogin,forgotPassword,signOut:doSignOut,syncNow,linkGoogle,addPassword,verifyEmail,acceptNativeGoogleToken};
 window.__resolveCofreCloudReady?.(window.CofreCloud);
 try{
   app=initializeApp(firebaseConfig);auth=getAuth(app);db=getFirestore(app);

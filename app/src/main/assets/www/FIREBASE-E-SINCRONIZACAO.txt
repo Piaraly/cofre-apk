@@ -1,0 +1,10 @@
+COFRE — FIREBASE E SINCRONIZAÇÃO
+
+Projecto Firebase: cofredb-ef5d2
+Métodos: Google e Email/Palavra-passe
+Firestore: users/{uid}/cofre/main
+
+A PWA suporta Google e Email/Palavra-passe.
+No APK baseado em WebView, o Google bloqueia autenticação dentro de navegadores incorporados. O APK suporta Email/Palavra-passe e sincroniza os mesmos dados. Quem entrar inicialmente com Google pode, na PWA, abrir Definições > Conta e sincronização > Adicionar palavra-passe; depois entra no APK com o mesmo email e palavra-passe, usando o mesmo UID e o mesmo Cofre.
+
+As regras do Firestore devem restringir users/{userId} ao request.auth.uid correspondente.

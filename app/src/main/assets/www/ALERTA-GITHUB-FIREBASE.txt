@@ -1,0 +1,15 @@
+COFRE — ALERTA DO GITHUB SOBRE A CHAVE FIREBASE
+
+O GitHub pode detectar a apiKey do Firebase Web como "Google API Key". Para uma aplicação Web Firebase, esta chave faz parte da configuração pública do cliente e não funciona como palavra-passe. A autorização dos dados depende das regras do Firestore, Firebase Authentication, IAM e App Check.
+
+Confirme antes de fechar o alerta:
+1. O alerta aponta apenas para a propriedade apiKey dentro de firebaseConfig.
+2. As regras do Firestore limitam cada utilizador a users/{uid}.
+3. Não existe no repositório qualquer ficheiro de conta de serviço, private_key, client_secret ou chave do Firebase Admin SDK.
+4. Na Google Cloud Console, a chave criada pelo Firebase permanece restringida às APIs relacionadas com Firebase.
+
+No GitHub:
+Security and quality > Secret scanning > abra o alerta > Close as > False positive.
+Comentário sugerido: "Firebase Web API key; configuração pública do cliente. Acesso protegido por Authentication e Firestore Security Rules."
+
+Não feche como falso positivo se o alerta mencionar uma chave privada, conta de serviço, OAuth client secret, token ou chave de servidor.

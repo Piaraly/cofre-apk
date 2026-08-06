@@ -1,0 +1,6 @@
+CORRECÇÃO DA BASE DE CÁLCULO NO TELEMÓVEL
+
+- A opção passou a mostrar apenas “Património líquido”.
+- Foi removida a explicação longa abaixo do campo.
+- O campo foi ajustado para não aumentar a largura da página em ecrãs pequenos.
+- O cálculo continua a excluir o valor dos Bens, conforme definido anteriormente.

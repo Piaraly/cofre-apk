@@ -1,0 +1,23 @@
+COFRE — RELATÓRIO DE VALIDAÇÃO
+
+Verificações efectuadas:
+- O JavaScript clássico e o módulo Firebase passam na verificação de sintaxe.
+- A PWA e os assets Android possuem o mesmo index.html.
+- A configuração aponta para o projecto cofredb-ef5d2.
+- O documento utilizado é users/{uid}/cofre/main.
+- O pacote público começa sem movimentos, dívidas, salários, necessidades, bens ou dados pessoais.
+- O Service Worker usa um novo cache e inclui privacy.html.
+- O Android possui permissão INTERNET e mantém armazenamento local para funcionamento offline.
+- O versionCode Android foi elevado para 20; versionName permanece 1.0.
+
+Limitação conhecida:
+- O OAuth Google não é executado dentro do WebView do APK. No APK, use email/palavra-passe. Uma conta criada com Google pode associar uma palavra-passe na PWA e depois entrar no APK com o mesmo UID e os mesmos dados.
+
+
+VALIDAÇÃO DESTA ACTUALIZAÇÃO
+- A área de autenticação usa alinhamento seguro: fica centrada quando cabe e começa no topo quando o formulário ultrapassa a altura do ecrã.
+- Foram acrescentados ajustes para janelas de computador com pouca altura.
+- Ao mudar entre Entrar e Criar conta, o scroll do ecrã de autenticação retorna ao topo.
+- PWA e assets Android usam o mesmo index.html.
+- Cache PWA: cofre-v21-auth-mobile-persistent.
+- Android versionCode: 20; versionName: 1.0.
